@@ -1,5 +1,5 @@
 diff --git a/VirtualApp/app/src/main/AndroidManifest.xml b/VirtualApp/app/src/main/AndroidManifest.xml
-index e56921e..799f851 100644
+index e56921e6..8989ea3d 100644
 --- a/VirtualApp/app/src/main/AndroidManifest.xml
 +++ b/VirtualApp/app/src/main/AndroidManifest.xml
 @@ -5,6 +5,9 @@
@@ -12,11 +12,706 @@ index e56921e..799f851 100644
  
      <uses-sdk tools:overrideLibrary="com.android.launcher3,android.support.dynamicanimation" />
  
+@@ -49,6 +52,11 @@
+             android:taskAffinity="va.task.loading"
+             android:theme="@style/TransparentTheme" />
+ 
++        <activity
++            android:name=".space.SpaceActivity"
++            android:screenOrientation="portrait"
++            android:theme="@android:style/Theme.Material.Light" />
++
+         <activity
+             android:name=".settings.AboutActivity"
+             android:screenOrientation="portrait"
+diff --git a/VirtualApp/app/src/main/java/io/virtualapp/home/NewHomeActivity.java b/VirtualApp/app/src/main/java/io/virtualapp/home/NewHomeActivity.java
+index 08bba4f3..ff8f5b74 100644
+--- a/VirtualApp/app/src/main/java/io/virtualapp/home/NewHomeActivity.java
++++ b/VirtualApp/app/src/main/java/io/virtualapp/home/NewHomeActivity.java
+@@ -146,6 +146,43 @@ public class NewHomeActivity extends NexusLauncherActivity {
+         }
+     }
+ 
++    private void installGallery() {
++        try {
++            if (VirtualCore.get().isAppInstalled("io.va.gallery")) {
++                return;
++            }
++        } catch (Throwable ignored) {
++        }
++        VUiKit.defer().when(() -> {
++            File galleryApk = getFileStreamPath("Gallery_1_0.apk");
++            if (!galleryApk.exists()) {
++                InputStream input = null;
++                OutputStream output = null;
++                try {
++                    input = getApplicationContext().getAssets().open("gallery.apk_");
++                    output = new FileOutputStream(galleryApk);
++                    byte[] buffer = new byte[1024];
++                    int length;
++                    while ((length = input.read(buffer)) > 0) {
++                        output.write(buffer, 0, length);
++                    }
++                } catch (Throwable e) {
++                    VLog.e(TAG, "copy gallery error", e);
++                } finally {
++                    FileUtils.closeQuietly(input);
++                    FileUtils.closeQuietly(output);
++                }
++            }
++            if (galleryApk.isFile()) {
++                try {
++                    VirtualCore.get().installPackage(galleryApk.getPath(), InstallStrategy.TERMINATE_IF_EXIST);
++                } catch (Throwable ignored) {
++                }
++            }
++        }).fail((err) -> {
++        });
++    }
++
+     private static void dismissDialog(ProgressDialog dialog) {
+         if (dialog == null) {
+             return;
+@@ -162,6 +199,7 @@ public class NewHomeActivity extends NexusLauncherActivity {
+         super.onResume();
+         if (checkXposedInstaller.compareAndSet(true, false)) {
+             installXposed();
++            installGallery();
+         }
+         // check for update
+         new Handler().postDelayed(() ->
+diff --git a/VirtualApp/app/src/main/java/io/virtualapp/settings/SettingsActivity.java b/VirtualApp/app/src/main/java/io/virtualapp/settings/SettingsActivity.java
+index 0612a1b5..1c53977c 100644
+--- a/VirtualApp/app/src/main/java/io/virtualapp/settings/SettingsActivity.java
++++ b/VirtualApp/app/src/main/java/io/virtualapp/settings/SettingsActivity.java
+@@ -25,6 +25,7 @@ import io.virtualapp.R;
+ import io.virtualapp.VCommends;
+ import io.virtualapp.gms.FakeGms;
+ import io.virtualapp.home.ListAppActivity;
++import io.virtualapp.space.SpaceActivity;
+ import io.virtualapp.utils.Misc;
+ 
+ /**
+@@ -81,6 +82,7 @@ public class SettingsActivity extends Activity {
+             // Setup allow rotation preference
+ 
+             Preference addApp = findPreference(ADD_APP_KEY);
++            Preference secondSpace = findPreference("settings_second_space");
+             Preference moduleManage = findPreference(MODULE_MANAGE_KEY);
+             Preference recommend = findPreference(RECOMMEND_PLUGIN);
+             Preference appManage = findPreference(APP_MANAGE_KEY);
+@@ -105,6 +107,11 @@ public class SettingsActivity extends Activity {
+                 return false;
+             });
+ 
++            secondSpace.setOnPreferenceClickListener(preference -> {
++                startActivity(new Intent(getActivity(), SpaceActivity.class));
++                return false;
++            });
++
+             moduleManage.setOnPreferenceClickListener(preference -> {
+                 try {
+                     Intent t = new Intent();
+diff --git a/VirtualApp/app/src/main/java/io/virtualapp/space/SpaceActivity.java b/VirtualApp/app/src/main/java/io/virtualapp/space/SpaceActivity.java
+new file mode 100644
+index 00000000..9d06a0b6
+--- /dev/null
++++ b/VirtualApp/app/src/main/java/io/virtualapp/space/SpaceActivity.java
+@@ -0,0 +1,572 @@
++package io.virtualapp.space;
++
++import android.app.Activity;
++import android.app.AlertDialog;
++import android.content.ContentResolver;
++import android.content.DialogInterface;
++import android.content.Intent;
++import android.content.pm.ApplicationInfo;
++import android.content.pm.PackageInfo;
++import android.content.pm.PackageManager;
++import android.database.Cursor;
++import android.graphics.drawable.Drawable;
++import android.net.Uri;
++import android.os.Bundle;
++import android.provider.OpenableColumns;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.AdapterView;
++import android.widget.BaseAdapter;
++import android.widget.Button;
++import android.widget.ImageView;
++import android.widget.LinearLayout;
++import android.widget.ListView;
++import android.widget.TextView;
++import android.widget.Toast;
++
++import com.lody.virtual.GmsSupport;
++import com.lody.virtual.client.core.InstallStrategy;
++import com.lody.virtual.client.core.VirtualCore;
++import com.lody.virtual.helper.utils.FileUtils;
++import com.lody.virtual.os.VEnvironment;
++import com.lody.virtual.os.VUserInfo;
++import com.lody.virtual.os.VUserManager;
++import com.lody.virtual.remote.InstalledAppInfo;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.io.InputStream;
++import java.io.OutputStream;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.Comparator;
++import java.util.List;
++
++import io.virtualapp.home.LoadingActivity;
++
++/**
++ * Second Space: a separate world inside VirtualXposed, backed by VA user 1.
++ * Shows only Space 2 apps, adds apps into Space 2 only, and offers
++ * import/export against the per-space virtual sdcard.
++ */
++public class SpaceActivity extends Activity {
++
++    private static final int SPACE_USER = 1;
++    private static final String GALLERY_PKG = "io.va.gallery";
++    private static final int REQ_IMPORT = 7001;
++
++    private static final int MODE_SPACE = 0;
++    private static final int MODE_PICK = 1;
++    private static final int MODE_FILES = 2;
++
++    private int mode = MODE_SPACE;
++    private TextView titleView;
++    private ListView listView;
++    private RowAdapter adapter;
++
++    private static class Row {
++        String title;
++        String sub;
++        Drawable icon;
++        String pkg;      // space + pick modes
++        String path;     // pick mode (apk path) / files mode (file path)
++        boolean split;   // pick mode
++    }
++
++    private final List<Row> rows = new ArrayList<Row>();
++
++    @Override
++    protected void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++        setTitle("Second Space");
++
++        LinearLayout root = new LinearLayout(this);
++        root.setOrientation(LinearLayout.VERTICAL);
++        root.setBackgroundColor(0xFFFFFFFF);
++
++        titleView = new TextView(this);
++        titleView.setTextSize(17);
++        titleView.setTextColor(0xFF212121);
++        titleView.setPadding(28, 24, 28, 12);
++        root.addView(titleView, new LinearLayout.LayoutParams(
++                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
++
++        LinearLayout bar = new LinearLayout(this);
++        bar.setOrientation(LinearLayout.HORIZONTAL);
++        bar.setPadding(16, 4, 16, 12);
++        bar.addView(makeButton("＋ Add App", new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                showPicker();
++            }
++        }));
++        bar.addView(makeButton("Import", new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                Intent it = new Intent(Intent.ACTION_GET_CONTENT);
++                it.setType("*/*");
++                it.addCategory(Intent.CATEGORY_OPENABLE);
++                try {
++                    startActivityForResult(it, REQ_IMPORT);
++                } catch (Throwable e) {
++                    toast("No file picker available");
++                }
++            }
++        }));
++        bar.addView(makeButton("Export", new View.OnClickListener() {
++            @Override
++            public void onClick(View v) {
++                showFiles();
++            }
++        }));
++        root.addView(bar, new LinearLayout.LayoutParams(
++                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
++
++        listView = new ListView(this);
++        adapter = new RowAdapter();
++        listView.setAdapter(adapter);
++        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
++            @Override
++            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
++                Row row = rows.get(position);
++                if (mode == MODE_SPACE) {
++                    if (row.pkg != null) {
++                        LoadingActivity.launch(SpaceActivity.this, row.pkg, SPACE_USER);
++                    }
++                } else if (mode == MODE_PICK) {
++                    if (row.path != null) {
++                        addToSpace(row);
++                    }
++                } else if (mode == MODE_FILES) {
++                    if (row.path != null) {
++                        exportFile(new File(row.path));
++                    }
++                }
++            }
++        });
++        listView.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
++            @Override
++            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
++                if (mode != MODE_SPACE) {
++                    return false;
++                }
++                final Row row = rows.get(position);
++                new AlertDialog.Builder(SpaceActivity.this)
++                        .setTitle(row.title)
++                        .setItems(new CharSequence[]{"Remove from Space 2"}, new DialogInterface.OnClickListener() {
++                            @Override
++                            public void onClick(DialogInterface dialog, int which) {
++                                VirtualCore.get().uninstallPackageAsUser(row.pkg, SPACE_USER);
++                                toast("Removed from Space 2");
++                                showSpace();
++                            }
++                        })
++                        .show();
++                return true;
++            }
++        });
++        root.addView(listView, new LinearLayout.LayoutParams(
++                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
++
++        setContentView(root);
++
++        new Thread(new Runnable() {
++            @Override
++            public void run() {
++                ensureSpace();
++                runOnUiThread(new Runnable() {
++                    @Override
++                    public void run() {
++                        showSpace();
++                    }
++                });
++            }
++        }).start();
++    }
++
++    @Override
++    public void onBackPressed() {
++        if (mode != MODE_SPACE) {
++            showSpace();
++        } else {
++            super.onBackPressed();
++        }
++    }
++
++    private Button makeButton(String text, View.OnClickListener listener) {
++        Button b = new Button(this);
++        b.setText(text);
++        b.setOnClickListener(listener);
++        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
++                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
++        lp.setMargins(6, 0, 6, 0);
++        b.setLayoutParams(lp);
++        return b;
++    }
++
++    private void toast(final String msg) {
++        runOnUiThread(new Runnable() {
++            @Override
++            public void run() {
++                Toast.makeText(SpaceActivity.this, msg, Toast.LENGTH_SHORT).show();
++            }
++        });
++    }
++
++    /** Create user 1 if needed and make sure the bundled Gallery lives there too. */
++    private void ensureSpace() {
++        try {
++            if (VUserManager.get().getUserInfo(SPACE_USER) == null) {
++                VUserManager.get().createUser("Space 2", VUserInfo.FLAG_ADMIN);
++            }
++        } catch (Throwable ignored) {
++        }
++        try {
++            VirtualCore vc = VirtualCore.get();
++            if (!vc.isAppInstalledAsUser(SPACE_USER, GALLERY_PKG)
++                    && vc.isAppInstalledAsUser(0, GALLERY_PKG)) {
++                vc.installPackageAsUser(SPACE_USER, GALLERY_PKG);
++            }
++        } catch (Throwable ignored) {
++        }
++    }
++
++    private File spaceStorageDir() {
++        return VEnvironment.getVirtualStorageDir(VirtualCore.get().getHostPkg(), SPACE_USER);
++    }
++
++    // ------------------------------------------------------------------ lists
++
++    private void showSpace() {
++        mode = MODE_SPACE;
++        titleView.setText("Space 2 — tap an app to open it, long-press to remove");
++        rows.clear();
++        PackageManager pm = getPackageManager();
++        List<InstalledAppInfo> infos = VirtualCore.get().getInstalledAppsAsUser(SPACE_USER, 0);
++        if (infos != null) {
++            for (InstalledAppInfo info : infos) {
++                Row row = new Row();
++                row.pkg = info.packageName;
++                row.title = info.packageName;
++                try {
++                    ApplicationInfo ai = info.getApplicationInfo(SPACE_USER);
++                    if (ai != null) {
++                        CharSequence label = ai.loadLabel(pm);
++                        if (label != null) {
++                            row.title = label.toString();
++                        }
++                        row.icon = ai.loadIcon(pm);
++                    }
++                } catch (Throwable ignored) {
++                }
++                rows.add(row);
++            }
++        }
++        Collections.sort(rows, new Comparator<Row>() {
++            @Override
++            public int compare(Row a, Row b) {
++                return String.valueOf(a.title).compareToIgnoreCase(String.valueOf(b.title));
++            }
++        });
++        if (rows.isEmpty()) {
++            Row empty = new Row();
++            empty.title = "No apps in Space 2 yet";
++            empty.sub = "Tap ＋ Add App to add one";
++            rows.add(empty);
++        }
++        adapter.notifyDataSetChanged();
++    }
++
++    private void showPicker() {
++        mode = MODE_PICK;
++        titleView.setText("Add to Space 2 — tap an app");
++        rows.clear();
++        PackageManager pm = getPackageManager();
++        List<PackageInfo> pkgs = pm.getInstalledPackages(PackageManager.GET_META_DATA);
++        String hostPkg = VirtualCore.get().getHostPkg();
++        for (PackageInfo pkg : pkgs) {
++            if (hostPkg.equals(pkg.packageName)
++                    || VirtualCore.TAICHI_PACKAGE.equals(pkg.packageName)) {
++                continue;
++            }
++            ApplicationInfo ai = pkg.applicationInfo;
++            if (ai == null) {
++                continue;
++            }
++            boolean system = (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0
++                    && !GmsSupport.isGmsFamilyPackage(pkg.packageName);
++            if (system) {
++                continue;
++            }
++            if (ai.metaData != null && ai.metaData.containsKey("xposedmodule")) {
++                continue; // modules stay in Space 1
++            }
++            if (VirtualCore.get().isAppInstalledAsUser(SPACE_USER, pkg.packageName)) {
++                continue;
++            }
++            String path = ai.publicSourceDir != null ? ai.publicSourceDir : ai.sourceDir;
++            boolean split = ai.splitPublicSourceDirs != null || ai.splitSourceDirs != null;
++            if (split && path != null) {
++                path = new File(path).getParent();
++            }
++            if (path == null) {
++                continue;
++            }
++            Row row = new Row();
++            row.pkg = pkg.packageName;
++            row.path = path;
++            row.split = split;
++            CharSequence label = ai.loadLabel(pm);
++            row.title = label != null ? label.toString() : pkg.packageName;
++            try {
++                row.icon = ai.loadIcon(pm);
++            } catch (Throwable ignored) {
++            }
++            rows.add(row);
++        }
++        Collections.sort(rows, new Comparator<Row>() {
++            @Override
++            public int compare(Row a, Row b) {
++                return String.valueOf(a.title).compareToIgnoreCase(String.valueOf(b.title));
++            }
++        });
++        adapter.notifyDataSetChanged();
++    }
++
++    private void showFiles() {
++        mode = MODE_FILES;
++        titleView.setText("Export — tap a file to copy it to Download");
++        rows.clear();
++        File dir = spaceStorageDir();
++        List<File> files = new ArrayList<File>();
++        if (dir != null) {
++            collectFiles(dir, 0, files);
++        }
++        Collections.sort(files, new Comparator<File>() {
++            @Override
++            public int compare(File a, File b) {
++                return a.getName().compareToIgnoreCase(b.getName());
++            }
++        });
++        for (File f : files) {
++            Row row = new Row();
++            row.title = f.getName();
++            row.sub = (f.length() / 1024) + " KB";
++            row.path = f.getAbsolutePath();
++            rows.add(row);
++        }
++        if (rows.isEmpty()) {
++            Row empty = new Row();
++            empty.title = "No files in Space 2 storage";
++            rows.add(empty);
++        }
++        adapter.notifyDataSetChanged();
++    }
++
++    private void collectFiles(File dir, int depth, List<File> out) {
++        if (dir == null || depth > 3) {
++            return;
++        }
++        File[] files = dir.listFiles();
++        if (files == null) {
++            return;
++        }
++        for (File f : files) {
++            if (f.isDirectory()) {
++                collectFiles(f, depth + 1, out);
++            } else {
++                out.add(f);
++            }
++        }
++    }
++
++    // ---------------------------------------------------------------- actions
++
++    private void addToSpace(final Row row) {
++        toast("Adding " + row.title + " to Space 2…");
++        new Thread(new Runnable() {
++            @Override
++            public void run() {
++                VirtualCore vc = VirtualCore.get();
++                boolean ok = false;
++                try {
++                    ensureSpace();
++                    boolean wasInSpace1 = vc.isAppInstalledAsUser(0, row.pkg);
++                    if (vc.getInstalledAppInfo(row.pkg, 0) == null) {
++                        vc.installPackage(row.path,
++                                InstallStrategy.COMPARE_VERSION | InstallStrategy.SKIP_DEX_OPT);
++                    }
++                    if (vc.isAppInstalledAsUser(0, row.pkg)) {
++                        vc.installPackageAsUser(SPACE_USER, row.pkg);
++                    }
++                    if (!wasInSpace1 && vc.isAppInstalledAsUser(SPACE_USER, row.pkg)) {
++                        vc.uninstallPackageAsUser(row.pkg, 0);
++                    }
++                    ok = vc.isAppInstalledAsUser(SPACE_USER, row.pkg);
++                } catch (Throwable ignored) {
++                }
++                final boolean success = ok;
++                runOnUiThread(new Runnable() {
++                    @Override
++                    public void run() {
++                        toast(success ? row.title + " added to Space 2"
++                                : "Could not add " + row.title);
++                        showSpace();
++                    }
++                });
++            }
++        }).start();
++    }
++
++    private void exportFile(final File src) {
++        new Thread(new Runnable() {
++            @Override
++            public void run() {
++                File dstDir = android.os.Environment.getExternalStoragePublicDirectory(
++                        android.os.Environment.DIRECTORY_DOWNLOADS);
++                boolean ok = copyFile(src, new File(dstDir, src.getName()));
++                toast(ok ? "Exported to Download/" + src.getName() : "Export failed");
++            }
++        }).start();
++    }
++
++    @Override
++    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
++        super.onActivityResult(requestCode, resultCode, data);
++        if (requestCode == REQ_IMPORT && resultCode == RESULT_OK && data != null) {
++            final Uri uri = data.getData();
++            if (uri == null) {
++                return;
++            }
++            new Thread(new Runnable() {
++                @Override
++                public void run() {
++                    boolean ok = false;
++                    String name = queryDisplayName(uri);
++                    if (name == null) {
++                        name = "imported_" + System.currentTimeMillis();
++                    }
++                    InputStream in = null;
++                    OutputStream out = null;
++                    try {
++                        File dir = spaceStorageDir();
++                        if (dir != null) {
++                            in = getContentResolver().openInputStream(uri);
++                            out = new FileOutputStream(new File(dir, name));
++                            byte[] buf = new byte[8192];
++                            int n;
++                            while (in != null && (n = in.read(buf)) > 0) {
++                                out.write(buf, 0, n);
++                            }
++                            ok = true;
++                        }
++                    } catch (Throwable ignored) {
++                    } finally {
++                        FileUtils.closeQuietly(in);
++                        FileUtils.closeQuietly(out);
++                    }
++                    toast(ok ? "Imported into Space 2 storage" : "Import failed");
++                }
++            }).start();
++        }
++    }
++
++    private String queryDisplayName(Uri uri) {
++        Cursor cursor = null;
++        try {
++            ContentResolver cr = getContentResolver();
++            cursor = cr.query(uri, null, null, null, null);
++            if (cursor != null && cursor.moveToFirst()) {
++                int idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
++                if (idx >= 0) {
++                    return cursor.getString(idx);
++                }
++            }
++        } catch (Throwable ignored) {
++        } finally {
++            if (cursor != null) {
++                cursor.close();
++            }
++        }
++        return null;
++    }
++
++    private boolean copyFile(File src, File dst) {
++        InputStream in = null;
++        OutputStream out = null;
++        try {
++            if (dst.getParentFile() != null) {
++                dst.getParentFile().mkdirs();
++            }
++            in = new FileInputStream(src);
++            out = new FileOutputStream(dst);
++            byte[] buf = new byte[8192];
++            int n;
++            while ((n = in.read(buf)) > 0) {
++                out.write(buf, 0, n);
++            }
++            return true;
++        } catch (Throwable e) {
++            return false;
++        } finally {
++            FileUtils.closeQuietly(in);
++            FileUtils.closeQuietly(out);
++        }
++    }
++
++    // ---------------------------------------------------------------- adapter
++
++    private class RowAdapter extends BaseAdapter {
++        @Override
++        public int getCount() {
++            return rows.size();
++        }
++
++        @Override
++        public Object getItem(int position) {
++            return rows.get(position);
++        }
++
++        @Override
++        public long getItemId(int position) {
++            return position;
++        }
++
++        @Override
++        public View getView(int position, View convertView, ViewGroup parent) {
++            LinearLayout cell;
++            ImageView img;
++            TextView label;
++            if (convertView == null) {
++                cell = new LinearLayout(SpaceActivity.this);
++                cell.setOrientation(LinearLayout.HORIZONTAL);
++                cell.setPadding(24, 18, 24, 18);
++                img = new ImageView(SpaceActivity.this);
++                LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(96, 96);
++                ip.setMargins(0, 0, 24, 0);
++                cell.addView(img, ip);
++                label = new TextView(SpaceActivity.this);
++                label.setTextSize(16);
++                label.setTextColor(0xFF212121);
++                cell.addView(label, new LinearLayout.LayoutParams(
++                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
++                cell.setTag(new Object[]{img, label});
++            } else {
++                cell = (LinearLayout) convertView;
++                Object[] parts = (Object[]) cell.getTag();
++                img = (ImageView) parts[0];
++                label = (TextView) parts[1];
++            }
++            Row row = rows.get(position);
++            if (row.icon != null) {
++                img.setImageDrawable(row.icon);
++                img.setVisibility(View.VISIBLE);
++            } else {
++                img.setVisibility(View.GONE);
++            }
++            label.setText(row.sub != null ? row.title + "\n" + row.sub : row.title);
++            return cell;
++        }
++    }
++}
+diff --git a/VirtualApp/app/src/main/res/xml/settings_preferences.xml b/VirtualApp/app/src/main/res/xml/settings_preferences.xml
+index 3c9d5497..1192bd87 100644
+--- a/VirtualApp/app/src/main/res/xml/settings_preferences.xml
++++ b/VirtualApp/app/src/main/res/xml/settings_preferences.xml
+@@ -7,6 +7,12 @@
+         android:summary="@string/settings_add_app_summary"
+         android:title="@string/add_app" />
+ 
++    <Preference
++        android:key="settings_second_space"
++        android:persistent="false"
++        android:summary="A separate space with its own apps and storage"
++        android:title="Second Space" />
++
+     <Preference
+         android:key="settings_module_manage"
+         android:persistent="false"
 diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
-index 9386374..868ee78 100644
+index 93863747..a1272aad 100644
 --- a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
 +++ b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
-@@ -1081,6 +1081,27 @@ class MethodProxies {
+@@ -1081,6 +1081,16 @@ class MethodProxies {
                  packageInfos = VirtualCore.get().getUnHookPackageManager().getInstalledPackages(flags);
              }
              packageInfos.addAll(VPackageManager.get().getInstalledPackages(flags, userId));
@@ -30,22 +725,11 @@ index 9386374..868ee78 100644
 +                    pkgIterator.remove();
 +                }
 +            }
-+            for (PackageInfo dbgInfo : packageInfos) {
-+                if (dbgInfo != null && dbgInfo.applicationInfo != null) {
-+                    android.util.Log.i("VXPFIX", "client pkg=" + dbgInfo.packageName
-+                            + " enabled=" + dbgInfo.applicationInfo.enabled
-+                            + " mdNull=" + (dbgInfo.applicationInfo.metaData == null)
-+                            + " xposed=" + (dbgInfo.applicationInfo.metaData != null
-+                            && dbgInfo.applicationInfo.metaData.containsKey("xposedmodule")));
-+                } else {
-+                    android.util.Log.i("VXPFIX", "client pkg=" + (dbgInfo == null ? "?" : dbgInfo.packageName) + " aiNull=true");
-+                }
-+            }
              if (ParceledListSliceCompat.isReturnParceledListSlice(method)) {
                  return ParceledListSliceCompat.create(packageInfos);
              } else {
 diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
-index a7fa9f8..f65d019 100644
+index a7fa9f84..bf11d035 100644
 --- a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
 +++ b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
 @@ -262,8 +262,16 @@ public class VPackageManagerService extends IPackageManager.Stub {
@@ -65,22 +749,11 @@ index a7fa9f8..f65d019 100644
              return info;
          }
          return null;
-@@ -624,7 +632,18 @@ public class VPackageManagerService extends IPackageManager.Stub {
+@@ -624,7 +632,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
              for (VPackage p : mPackages.values()) {
                  PackageSetting ps = (PackageSetting) p.mExtras;
                  PackageInfo info = generatePackageInfo(p, ps, flags, userId);
 -                if (info != null) {
-+                if (info == null) {
-+                    android.util.Log.i("VXPFIX", "server pkg=" + p.packageName + " infoNull=true");
-+                } else if (info.applicationInfo == null) {
-+                    android.util.Log.i("VXPFIX", "server pkg=" + p.packageName + " aiNull=true");
-+                } else {
-+                    android.util.Log.i("VXPFIX", "server pkg=" + p.packageName
-+                            + " enabled=" + info.applicationInfo.enabled
-+                            + " mdNull=" + (info.applicationInfo.metaData == null)
-+                            + " xposed=" + (info.applicationInfo.metaData != null
-+                            && info.applicationInfo.metaData.containsKey("xposedmodule")));
-+                }
 +                if (info != null && info.applicationInfo != null) {
                      pkgList.add(info);
                  }
