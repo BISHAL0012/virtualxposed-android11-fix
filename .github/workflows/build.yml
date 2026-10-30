@@ -1,0 +1,80 @@
+name: Build VirtualXposed Android 11 Fix
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Clone upstream VirtualXposed
+        run: git clone --depth 1 https://github.com/android-hacker/VirtualXposed.git src
+
+      - name: Apply Android 11 fix patch
+        run: |
+          cd src
+          git apply "$GITHUB_WORKSPACE/fix.patch"
+          git diff --stat
+
+      - name: Replace dead jcenter() with mirrors
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          repl = ("maven { url 'https://maven.aliyun.com/repository/jcenter' }\n"
+                  "        maven { url 'https://maven.aliyun.com/repository/public' }")
+          count = 0
+          for p in sorted(pathlib.Path('src').rglob('*.gradle')):
+              t = p.read_text()
+              if 'jcenter()' in t:
+                  p.write_text(t.replace('jcenter()', repl))
+                  count += 1
+                  print('patched', p)
+          print('files patched:', count)
+          PYEOF
+          grep -rn "aliyun" src --include="*.gradle" || true
+
+      - name: Install Android SDK packages (platform 28, build-tools 28.0.3, NDK r17)
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-28" "build-tools;28.0.3" "ndk;17.2.4988734"
+          ls "$ANDROID_HOME/ndk"
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Write local.properties
+        run: |
+          printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_HOME" "$ANDROID_HOME/ndk/17.2.4988734" > src/VirtualApp/local.properties
+          cat src/VirtualApp/local.properties
+
+      - name: Build aosp debug APK
+        run: |
+          cd src/VirtualApp
+          chmod +x gradlew
+          ./gradlew :app:assembleAospDebug --no-daemon --stacktrace
+
+      - name: Publish APK as release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find src/VirtualApp/app/build/outputs/apk/aosp/debug -name '*.apk' | head -n 1)
+          echo "Built APK: $APK"
+          ls -la "$APK"
+          cp "$APK" VirtualXposed_Android11_Fix.apk
+          gh release create v1.0-fix1 VirtualXposed_Android11_Fix.apk \
+            --title "VirtualXposed 0.22.0 - Android 11 fix" \
+            --notes "VirtualXposed 0.22.0 with fix.patch applied: PackageInfo entries with a null applicationInfo are filtered out of getInstalledPackages, fixing the Xposed Installer 3.1.5 ModuleUtil NPE crash on Android 11. arm64 (aosp) debug build." \
+          || gh release upload v1.0-fix1 VirtualXposed_Android11_Fix.apk --clobber
