@@ -1,8 +1,8 @@
 diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
-index 9386374..a1272aa 100644
+index 9386374..868ee78 100644
 --- a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
 +++ b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
-@@ -1081,6 +1081,16 @@ class MethodProxies {
+@@ -1081,6 +1081,27 @@ class MethodProxies {
                  packageInfos = VirtualCore.get().getUnHookPackageManager().getInstalledPackages(flags);
              }
              packageInfos.addAll(VPackageManager.get().getInstalledPackages(flags, userId));
@@ -16,18 +16,40 @@ index 9386374..a1272aa 100644
 +                    pkgIterator.remove();
 +                }
 +            }
++            for (PackageInfo dbgInfo : packageInfos) {
++                if (dbgInfo != null && dbgInfo.applicationInfo != null) {
++                    android.util.Log.i("VXPFIX", "client pkg=" + dbgInfo.packageName
++                            + " enabled=" + dbgInfo.applicationInfo.enabled
++                            + " mdNull=" + (dbgInfo.applicationInfo.metaData == null)
++                            + " xposed=" + (dbgInfo.applicationInfo.metaData != null
++                            && dbgInfo.applicationInfo.metaData.containsKey("xposedmodule")));
++                } else {
++                    android.util.Log.i("VXPFIX", "client pkg=" + (dbgInfo == null ? "?" : dbgInfo.packageName) + " aiNull=true");
++                }
++            }
              if (ParceledListSliceCompat.isReturnParceledListSlice(method)) {
                  return ParceledListSliceCompat.create(packageInfos);
              } else {
 diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
-index a7fa9f8..1471d3b 100644
+index a7fa9f8..6dde437 100644
 --- a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
 +++ b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
-@@ -624,7 +624,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
+@@ -624,7 +624,18 @@ public class VPackageManagerService extends IPackageManager.Stub {
              for (VPackage p : mPackages.values()) {
                  PackageSetting ps = (PackageSetting) p.mExtras;
                  PackageInfo info = generatePackageInfo(p, ps, flags, userId);
 -                if (info != null) {
++                if (info == null) {
++                    android.util.Log.i("VXPFIX", "server pkg=" + p.packageName + " infoNull=true");
++                } else if (info.applicationInfo == null) {
++                    android.util.Log.i("VXPFIX", "server pkg=" + p.packageName + " aiNull=true");
++                } else {
++                    android.util.Log.i("VXPFIX", "server pkg=" + p.packageName
++                            + " enabled=" + info.applicationInfo.enabled
++                            + " mdNull=" + (info.applicationInfo.metaData == null)
++                            + " xposed=" + (info.applicationInfo.metaData != null
++                            && info.applicationInfo.metaData.containsKey("xposedmodule")));
++                }
 +                if (info != null && info.applicationInfo != null) {
                      pkgList.add(info);
                  }
