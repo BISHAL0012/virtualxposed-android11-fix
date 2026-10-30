@@ -55,6 +55,15 @@ jobs:
           distribution: temurin
           java-version: '8'
 
+      - name: Build bundled Gallery app and stage it as asset
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          bash gallery/build_gallery.sh
+          ls -la gallery/gallery.apk
+          mkdir -p src/VirtualApp/app/src/main/assets
+          cp gallery/gallery.apk src/VirtualApp/app/src/main/assets/gallery.apk_
+          ls -la src/VirtualApp/app/src/main/assets/
+
       - name: Write local.properties
         run: |
           printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_HOME" "$ANDROID_HOME/ndk/17.2.4988734" > src/VirtualApp/local.properties
@@ -80,7 +89,7 @@ jobs:
           echo "Built APK: $APK"
           ls -la "$APK"
           cp "$APK" VirtualXposed_Android11_Fix.apk
-          gh release create v1.0-fix4 VirtualXposed_Android11_Fix.apk \
-            --title "VirtualXposed 0.22.0 - Android 11 fix" \
-            --notes "VirtualXposed 0.22.0 with fix.patch applied: PackageInfo entries with a null applicationInfo are filtered out of getInstalledPackages, fixing the Xposed Installer 3.1.5 ModuleUtil NPE crash on Android 11. arm64 (aosp) debug build." \
-          || gh release upload v1.0-fix4 VirtualXposed_Android11_Fix.apk --clobber
+          gh release create v1.0-final VirtualXposed_Android11_Fix.apk \
+            --title "VirtualXposed 0.22.0 - Android 11 fix (FINAL)" \
+            --notes "FINAL build. VirtualXposed 0.22.0 for Android 11 with the cumulative fix patch: (1) Xposed Installer crash + module detection fixes (null applicationInfo filtering, setDataPosition parcel fix in generatePackageInfo), (2) MANAGE_EXTERNAL_STORAGE declared so the All files access toggle can be granted, (3) Second Space feature - Settings > Second Space opens a separate user-1 world with its own apps and storage, Add App / Import / Export, (4) Gallery app (io.va.gallery) pre-installed on first launch. arm64 (aosp) debug build." \
+          || gh release upload v1.0-final VirtualXposed_Android11_Fix.apk --clobber
