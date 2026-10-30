@@ -1,3 +1,17 @@
+diff --git a/VirtualApp/app/src/main/AndroidManifest.xml b/VirtualApp/app/src/main/AndroidManifest.xml
+index e56921e..799f851 100644
+--- a/VirtualApp/app/src/main/AndroidManifest.xml
++++ b/VirtualApp/app/src/main/AndroidManifest.xml
+@@ -5,6 +5,9 @@
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
+     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
++    <!-- Android 11 fix: declaring this makes the system "All files access"
++         toggle grantable to VirtualXposed (it was greyed out without it). -->
++    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+ 
+     <uses-sdk tools:overrideLibrary="com.android.launcher3,android.support.dynamicanimation" />
+ 
 diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
 index 9386374..868ee78 100644
 --- a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
