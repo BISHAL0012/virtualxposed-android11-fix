@@ -1,0 +1,34 @@
+diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
+index 9386374..a1272aa 100644
+--- a/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
++++ b/VirtualApp/lib/src/main/java/com/lody/virtual/client/hook/proxies/pm/MethodProxies.java
+@@ -1081,6 +1081,16 @@ class MethodProxies {
+                 packageInfos = VirtualCore.get().getUnHookPackageManager().getInstalledPackages(flags);
+             }
+             packageInfos.addAll(VPackageManager.get().getInstalledPackages(flags, userId));
++            // Android 11 fix: entries with a null applicationInfo can appear in
++            // this list, and callers that read applicationInfo.enabled (like
++            // Xposed Installer's ModuleUtil) crash with an NPE. Drop them.
++            java.util.Iterator<PackageInfo> pkgIterator = packageInfos.iterator();
++            while (pkgIterator.hasNext()) {
++                PackageInfo pkgInfo = pkgIterator.next();
++                if (pkgInfo == null || pkgInfo.applicationInfo == null) {
++                    pkgIterator.remove();
++                }
++            }
+             if (ParceledListSliceCompat.isReturnParceledListSlice(method)) {
+                 return ParceledListSliceCompat.create(packageInfos);
+             } else {
+diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
+index a7fa9f8..1471d3b 100644
+--- a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
++++ b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
+@@ -624,7 +624,7 @@ public class VPackageManagerService extends IPackageManager.Stub {
+             for (VPackage p : mPackages.values()) {
+                 PackageSetting ps = (PackageSetting) p.mExtras;
+                 PackageInfo info = generatePackageInfo(p, ps, flags, userId);
+-                if (info != null) {
++                if (info != null && info.applicationInfo != null) {
+                     pkgList.add(info);
+                 }
+             }
