@@ -16,7 +16,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Clone upstream VirtualXposed
-        run: git clone --depth 1 https://github.com/android-hacker/VirtualXposed.git src
+        run: git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/android-hacker/VirtualXposed.git src
 
       - name: Apply Android 11 fix patch
         run: |
