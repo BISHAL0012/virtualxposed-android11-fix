@@ -31,10 +31,27 @@ index 9386374..868ee78 100644
                  return ParceledListSliceCompat.create(packageInfos);
              } else {
 diff --git a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
-index a7fa9f8..6dde437 100644
+index a7fa9f8..f65d019 100644
 --- a/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
 +++ b/VirtualApp/lib/src/main/java/com/lody/virtual/server/pm/VPackageManagerService.java
-@@ -624,7 +624,18 @@ public class VPackageManagerService extends IPackageManager.Stub {
+@@ -262,8 +262,16 @@ public class VPackageManagerService extends IPackageManager.Stub {
+         if (packageInfo != null) {
+             Parcel parcel = Parcel.obtain();
+             packageInfo.writeToParcel(parcel, 0);
++            parcel.setDataPosition(0);
+             PackageInfo info = PackageInfo.CREATOR.createFromParcel(parcel);
+             parcel.recycle();
++            if (info != null && info.applicationInfo == null) {
++                // Android 11 fix: the parcel round-trip above can drop the
++                // applicationInfo; regenerate and re-attach it so callers
++                // (e.g. Xposed Installer's module scan) see complete data.
++                info.applicationInfo = PackageParserEx.generateApplicationInfo(p, flags,
++                        ps.readUserState(userId), userId);
++            }
+             return info;
+         }
+         return null;
+@@ -624,7 +632,18 @@ public class VPackageManagerService extends IPackageManager.Stub {
              for (VPackage p : mPackages.values()) {
                  PackageSetting ps = (PackageSetting) p.mExtras;
                  PackageInfo info = generatePackageInfo(p, ps, flags, userId);
