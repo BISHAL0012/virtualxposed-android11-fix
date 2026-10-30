@@ -60,6 +60,12 @@ jobs:
           printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_HOME" "$ANDROID_HOME/ndk/17.2.4988734" > src/VirtualApp/local.properties
           cat src/VirtualApp/local.properties
 
+      - name: Install host libs for old NDK clang (libtinfo5)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libtinfo5 > /dev/null
+          ls -la /usr/lib/x86_64-linux-gnu/libtinfo.so.5*
+
       - name: Build aosp debug APK
         run: |
           cd src/VirtualApp
