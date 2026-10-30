@@ -80,7 +80,7 @@ jobs:
           echo "Built APK: $APK"
           ls -la "$APK"
           cp "$APK" VirtualXposed_Android11_Fix.apk
-          gh release create v1.0-fix2 VirtualXposed_Android11_Fix.apk \
+          gh release create v1.0-fix3 VirtualXposed_Android11_Fix.apk \
             --title "VirtualXposed 0.22.0 - Android 11 fix" \
             --notes "VirtualXposed 0.22.0 with fix.patch applied: PackageInfo entries with a null applicationInfo are filtered out of getInstalledPackages, fixing the Xposed Installer 3.1.5 ModuleUtil NPE crash on Android 11. arm64 (aosp) debug build." \
-          || gh release upload v1.0-fix2 VirtualXposed_Android11_Fix.apk --clobber
+          || gh release upload v1.0-fix3 VirtualXposed_Android11_Fix.apk --clobber
